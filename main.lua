@@ -60,6 +60,11 @@ local function updateMoon(dt)
     if moon.x > SCREEN_WIDTH + 100 then moon.x = -100 end
 end
 
+local function updateBigAsteroid(asteroid, dt)
+    asteroid.vx = asteroid.ax * dt
+    asteroid.vy = asteroid.ay * dt
+end
+
 local function updateSprites(dt)
     for index, sprite in ipairs(sprites) do
         sprite.vx = 0
@@ -67,9 +72,12 @@ local function updateSprites(dt)
         updateAnimation(sprite, dt)
         if sprite.type == "moon" then
             updateMoon(dt)
+        elseif sprite.type == "big_asteroid" then
+            updateBigAsteroid(sprite, dt)
         end
         sprite.x = sprite.x + sprite.vx
         sprite.y = sprite.y + sprite.vy
+        sprite.r = sprite.r + sprite.rSpeed
     end
 end
 
@@ -85,6 +93,7 @@ local function newSprite(type, x, y)
         ox = 0,
         oy = 0,
         r = 0,
+        rSpeed = 0,
         animation = ""
     }
     table.insert(sprites, sprite)
@@ -110,6 +119,18 @@ local function newMoon()
     moon.oy = animations[moon.animation].height / 2
 end
 
+local function newBigAsteroid(x, y)
+    local bigAsteroid = newSprite("big_asteroid", x, y)
+    startAnimation(bigAsteroid, "big_asteroid", 1)
+    bigAsteroid.ox = 32
+    bigAsteroid.oy = 32
+    bigAsteroid.ax = 2
+    bigAsteroid.ay = 2
+    table.insert(sprites, bigAsteroid)
+    table.insert(asteroids, bigAsteroid)
+    return bigAsteroid
+end
+
 local function loadTitleScreen()
     screen = "title_screen"
     tweening = {time = 0, value = SCREEN_HEIGHT, distance = -SCREEN_HEIGHT, duration = 2, tween = -1}
@@ -121,14 +142,21 @@ end
 local function loadEarthScreen()
     screen = "earth_screen"
     musics["Spacearray"]:stop()
+    mode = "normal"
     newEarth()
     newMoon()
+    asteroids = {}
+    asteroidTimer = love.math.random(1, 10)
 end
 
 function love.keypressed(key, scancode, isrepeat)
     if screen == "title_screen" then
         if tweening.tween == 0 then
             if key == "space" then loadEarthScreen() end
+        end
+    elseif screen == "earth_screen" then
+        if key == "v" then
+            if mode ~= "attack" then mode = "attack" else mode = "normal" end
         end
     end
     if key == "escape" then love.event.quit() end
@@ -138,6 +166,7 @@ local function loadAnimations()
     animations = {}
     animations["earth"] = newAnimation(images["earth"], 100, 100)
     animations["moon"] = newAnimation(images["moon"], 100, 100)
+    animations["big_asteroid"] = newAnimation(images["big_asteroid"], 64, 64)
 end
 
 local function loadImages()
@@ -145,6 +174,9 @@ local function loadImages()
     images["title_screen"] = love.graphics.newImage("images/title_screen.png")
     images["earth"] = love.graphics.newImage("images/earth.png")
     images["moon"] = love.graphics.newImage("images/moon.png")
+    images["attack_cursor"] = love.graphics.newImage("images/attack_cursor.png")
+    images["normal_cursor"] = love.graphics.newImage("images/normal_cursor.png")
+    images["big_asteroid"] = love.graphics.newImage("images/big_asteroid.png")
 end
 
 local function loadSounds()
@@ -164,8 +196,24 @@ local function updateTitleScreen(dt)
     end
 end
 
+local function generateAsteroids(dt)
+    asteroidTimer = asteroidTimer - dt
+    if asteroidTimer <= 0 then
+        asteroidTimer = love.math.random(1 , 10)
+        local asteroid = newBigAsteroid(love.math.random(0, SCREEN_WIDTH), 0)
+        asteroid.rSpeed = love.math.random(0.05, 0.1)
+    end
+end
+
+local function updateEarthScreen(dt)
+    generateAsteroids(dt)
+    updateSprites(dt)
+end
+
 function love.load()
     love.graphics.setDefaultFilter("nearest", "nearest")
+    love.mouse.setGrabbed(true)
+    love.mouse.setVisible(false)
     loadImages()
     loadSounds()
     loadMusics()
@@ -178,7 +226,7 @@ function love.update(dt)
     if screen == "title_screen" then
         updateTitleScreen(dt)
     elseif screen == "earth_screen" then
-        updateSprites(dt)
+        updateEarthScreen(dt)
     end
 end
 
@@ -204,6 +252,14 @@ local function earthScreen()
     love.graphics.setColor(1,1,1,1)
     drawAnimation(moon)
     drawAnimation(earth)
+    for index, asteroid in ipairs(asteroids) do
+        drawAnimation(asteroid)
+    end
+    if mode == "normal" then
+        love.graphics.draw(images["normal_cursor"], love.mouse.getX(), love.mouse.getY(), 0, 2, 2)
+    elseif mode == "attack" then
+        love.graphics.draw(images["attack_cursor"], love.mouse.getX(), love.mouse.getY(), 0, 2, 2, 8, 8)
+    end
 end
 
 function love.draw()
