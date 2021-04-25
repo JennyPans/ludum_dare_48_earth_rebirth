@@ -1,0 +1,13 @@
+{
+    "Lua.diagnostics.globals": [
+        "love",
+        "screen",
+        "tweening",
+        "musics",
+        "images",
+        "sprites",
+        "animations",
+        "earth",
+        "moon"
+    ]
+}
