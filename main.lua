@@ -177,6 +177,7 @@ local function loadImages()
     images["attack_cursor"] = love.graphics.newImage("images/attack_cursor.png")
     images["normal_cursor"] = love.graphics.newImage("images/normal_cursor.png")
     images["big_asteroid"] = love.graphics.newImage("images/big_asteroid.png")
+    images["cockpit"] = love.graphics.newImage("images/cockpit.png")
 end
 
 local function loadSounds()
@@ -201,7 +202,7 @@ local function generateAsteroids(dt)
     if asteroidTimer <= 0 then
         asteroidTimer = love.math.random(1 , 10)
         local asteroid = newBigAsteroid(love.math.random(0, SCREEN_WIDTH), 0)
-        asteroid.rSpeed = love.math.random(0.05, 0.1)
+        asteroid.rSpeed = love.math.random(0.001, 0.005)
     end
 end
 
@@ -256,6 +257,7 @@ local function earthScreen()
         drawAnimation(asteroid)
     end
     if mode == "normal" then
+        love.graphics.draw(images["cockpit"], 0, 0)
         love.graphics.draw(images["normal_cursor"], love.mouse.getX(), love.mouse.getY(), 0, 2, 2)
     elseif mode == "attack" then
         love.graphics.draw(images["attack_cursor"], love.mouse.getX(), love.mouse.getY(), 0, 2, 2, 8, 8)
