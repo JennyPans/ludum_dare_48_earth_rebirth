@@ -11,6 +11,9 @@
         "moon",
         "mode",
         "asteroids",
-        "asteroidTimer"
+        "asteroidTimer",
+        "sounds",
+        "explosions",
+        "earth_destroyed"
     ]
 }

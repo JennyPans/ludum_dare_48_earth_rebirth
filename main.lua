@@ -20,6 +20,19 @@ io.stdout:setvbuf("no")
 
 require("constants")
 
+local function Collision(box1, box2)
+   return not ((box2.x >= box1.x + box1.w)
+    or (box2.x + box2.w <= box1.x)
+    or (box2.y >= box1.y + box1.h)
+    or (box2.y + box2.h <= box1.y))
+end
+
+local function pointBoxCollision(x, y, box)
+   return x >= box.x and x < box.x + box.w and y >= box.y and y < box.y + box.h
+end
+
+function math.angle(x1,y1, x2,y2) return math.atan2(y2-y1, x2-x1) end
+
 local function easeOutSine(t, b, c, d)
 	return c * math.sin(t/d * (math.pi/2)) + b
 end
@@ -52,6 +65,7 @@ local function updateAnimation(sprite, dt)
     sprite.currentTimeAnimation = sprite.currentTimeAnimation + dt
     if sprite.currentTimeAnimation >= sprite.animationDuration then
         sprite.currentTimeAnimation = sprite.currentTimeAnimation - sprite.animationDuration
+        if sprite.type == "explosion" then sprite.toDelete = true end
     end
 end
 
@@ -61,24 +75,21 @@ local function updateMoon(dt)
 end
 
 local function updateBigAsteroid(asteroid, dt)
-    asteroid.vx = asteroid.ax * dt
-    asteroid.vy = asteroid.ay * dt
+    local angle = math.angle(asteroid.x, asteroid.y, earth.x, earth.y)
+    asteroid.vx = math.cos(angle) * asteroid.ax * dt
+    asteroid.vy = math.sin(angle) * asteroid.ay * dt
+    asteroid.hitbox.x = asteroid.x - 32
+    asteroid.hitbox.y = asteroid.y - 32
 end
 
-local function updateSprites(dt)
-    for index, sprite in ipairs(sprites) do
-        sprite.vx = 0
-        sprite.vy = 0
-        updateAnimation(sprite, dt)
-        if sprite.type == "moon" then
-            updateMoon(dt)
-        elseif sprite.type == "big_asteroid" then
-            updateBigAsteroid(sprite, dt)
-        end
-        sprite.x = sprite.x + sprite.vx
-        sprite.y = sprite.y + sprite.vy
-        sprite.r = sprite.r + sprite.rSpeed
-    end
+local function newBox(x, y, w, h)
+    local box = {
+        x = x,
+        y = y,
+        w = w,
+        h = h
+    }
+    return box
 end
 
 local function newSprite(type, x, y)
@@ -94,7 +105,8 @@ local function newSprite(type, x, y)
         oy = 0,
         r = 0,
         rSpeed = 0,
-        animation = ""
+        animation = "",
+        toDelete = false
     }
     table.insert(sprites, sprite)
     return sprite
@@ -107,6 +119,27 @@ local function newEarth()
     startAnimation(earth, "earth", 20)
     earth.ox = animations[earth.animation].width / 2
     earth.oy = animations[earth.animation].height / 2
+    local animation = animations[earth.animation]
+    earth.hitbox = newBox(earth.x - 60, earth.y - 60, animation.width * 1.2, animation.height * 1.2)
+    earth.life = 10
+end
+
+local function newEarthDestroyed()
+    earth_destroyed = newSprite("earth_destroyed", SCREEN_WIDTH/2, SCREEN_HEIGHT/2)
+    earth_destroyed.sx = 2
+    earth_destroyed.sy = 2
+    startAnimation(earth_destroyed, "earth_destroyed", 20)
+    earth_destroyed.ox = animations[earth_destroyed.animation].width / 2
+    earth_destroyed.oy = animations[earth_destroyed.animation].height / 2
+end
+
+local function loadGameOverScreen()
+    screen = "game_over"
+    tweening = {time = 0, value = SCREEN_HEIGHT, distance = -SCREEN_HEIGHT, duration = 2, tween = -1}
+    musics["Spacearray"]:setLooping(true)
+    love.audio.stop()
+    musics["Spacearray"]:play()
+    newEarthDestroyed()
 end
 
 local function newMoon()
@@ -124,11 +157,48 @@ local function newBigAsteroid(x, y)
     startAnimation(bigAsteroid, "big_asteroid", 1)
     bigAsteroid.ox = 32
     bigAsteroid.oy = 32
-    bigAsteroid.ax = 2
-    bigAsteroid.ay = 2
+    bigAsteroid.ax = 64
+    bigAsteroid.ay = 64
     table.insert(sprites, bigAsteroid)
     table.insert(asteroids, bigAsteroid)
+    local animation = animations[bigAsteroid.animation]
+    bigAsteroid.hitbox = newBox(bigAsteroid.x, bigAsteroid.y, animation.width, animation.height)
     return bigAsteroid
+end
+
+local function newExplosion(x, y)
+    local explosion = newSprite("explosion", x, y)
+    explosion.sx = 4
+    explosion.sy = 4
+    explosion.ox = 16
+    explosion.oy = 16
+    startAnimation(explosion, "explosion", 1)
+    table.insert(explosions, explosion)
+    return explosion
+end
+
+local function updateSprites(dt)
+    for index, sprite in ipairs(sprites) do
+        sprite.vx = 0
+        sprite.vy = 0
+        updateAnimation(sprite, dt)
+        if sprite.type == "moon" then
+            updateMoon(dt)
+        elseif sprite.type == "big_asteroid" then
+            updateBigAsteroid(sprite, dt)
+            if Collision(sprite.hitbox, earth.hitbox) and not sprite.toDelete then
+                earth.life = earth.life - 1
+                newExplosion(earth.x, earth.y)
+                sprite.toDelete = true
+                if earth.life <= 0 then
+                    loadGameOverScreen(dt)
+                end
+            end
+        end
+        sprite.x = sprite.x + sprite.vx
+        sprite.y = sprite.y + sprite.vy
+        sprite.r = sprite.r + sprite.rSpeed
+    end
 end
 
 local function loadTitleScreen()
@@ -139,14 +209,50 @@ local function loadTitleScreen()
     musics["Spacearray"]:play()
 end
 
-local function loadEarthScreen()
+local function initEarthScreen()
     screen = "earth_screen"
     musics["Spacearray"]:stop()
-    mode = "normal"
+    mode = "attack"
+    love.audio.stop()
+    musics["MyVeryOwnDeadShip"]:play()
+end
+
+local function loadEarthScreen()
+    initEarthScreen()
     newEarth()
     newMoon()
     asteroids = {}
     asteroidTimer = love.math.random(1, 10)
+end
+
+local function laser_attack()
+    sounds["laser_attack"]:stop()
+    sounds["laser_attack"]:play()
+end
+
+function love.mousepressed(x, y, button, istouch, presses )
+    if screen == "earth_screen" then
+        if mode == "attack" then
+            if button == 1 then
+                laser_attack()
+                for index, asteroid in ipairs(asteroids) do
+                    if pointBoxCollision(x, y, asteroid.hitbox) then
+                        asteroid.toDelete = true
+                        newExplosion(asteroid.x, asteroid.y)
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function switchAttackMode()
+    if mode ~= "attack" then
+        mode = "attack"
+        sounds["laser_activated"]:stop()
+        sounds["laser_activated"]:play()
+    else
+        mode = "normal" end
 end
 
 function love.keypressed(key, scancode, isrepeat)
@@ -156,7 +262,7 @@ function love.keypressed(key, scancode, isrepeat)
         end
     elseif screen == "earth_screen" then
         if key == "v" then
-            if mode ~= "attack" then mode = "attack" else mode = "normal" end
+            switchAttackMode()
         end
     end
     if key == "escape" then love.event.quit() end
@@ -167,6 +273,8 @@ local function loadAnimations()
     animations["earth"] = newAnimation(images["earth"], 100, 100)
     animations["moon"] = newAnimation(images["moon"], 100, 100)
     animations["big_asteroid"] = newAnimation(images["big_asteroid"], 64, 64)
+    animations["explosion"] = newAnimation(images["explosion"], 32, 32)
+    animations["earth_destroyed"] = newAnimation(images["earth_destroyed"], 100, 100)
 end
 
 local function loadImages()
@@ -178,14 +286,21 @@ local function loadImages()
     images["normal_cursor"] = love.graphics.newImage("images/normal_cursor.png")
     images["big_asteroid"] = love.graphics.newImage("images/big_asteroid.png")
     images["cockpit"] = love.graphics.newImage("images/cockpit.png")
+    images["explosion"] = love.graphics.newImage("images/explosion.png")
+    images["game_over"] = love.graphics.newImage("images/game_over.png")
+    images["earth_destroyed"] = love.graphics.newImage("images/earth_destroyed.png")
 end
 
 local function loadSounds()
+    sounds = {}
+    sounds["laser_attack"] = love.audio.newSource("sounds/laser_attack.mp3", "static")
+    sounds["laser_activated"] = love.audio.newSource("sounds/laser_activated.ogg", "static")
 end
 
 local function loadMusics()
     musics = {}
     musics["Spacearray"] = love.audio.newSource("musics/Spacearray.ogg", "stream")
+    musics["MyVeryOwnDeadShip"] = love.audio.newSource("musics/MyVeryOwnDeadShip.ogg", "stream")
 end
 
 local function updateTitleScreen(dt)
@@ -197,12 +312,26 @@ local function updateTitleScreen(dt)
     end
 end
 
+local function updateGameOverScreen(dt)
+    if tweening.tween ~= 0 then
+        if tweening.time < tweening.duration then
+            tweening.time = tweening.time + dt
+        end
+        tweening.tween = math.floor(easeOutSine(tweening.time, tweening.value, tweening.distance, tweening.duration))
+    end
+    updateAnimation(earth_destroyed, dt)
+end
+
 local function generateAsteroids(dt)
     asteroidTimer = asteroidTimer - dt
     if asteroidTimer <= 0 then
-        asteroidTimer = love.math.random(1 , 10)
-        local asteroid = newBigAsteroid(love.math.random(0, SCREEN_WIDTH), 0)
-        asteroid.rSpeed = love.math.random(0.001, 0.005)
+        asteroidTimer = love.math.random(1 , 3)
+        for i = 1, love.math.random(3), 1 do
+            local asteroid = newBigAsteroid(love.math.random(0, SCREEN_WIDTH), 0)
+            asteroid.ax = love.math.random(42, 72)
+            asteroid.ay = love.math.random(42, 72)
+            asteroid.rSpeed = love.math.random(0.001, 0.005)
+        end
     end
 end
 
@@ -220,7 +349,17 @@ function love.load()
     loadMusics()
     loadAnimations()
     sprites = {}
+    asteroids = {}
+    explosions = {}
     loadTitleScreen()
+end
+
+local function deleteSprites(sprites)
+    for sprite = #sprites, 1, -1 do
+        if sprites[sprite].toDelete then
+            table.remove(sprites, sprite)
+        end
+    end
 end
 
 function love.update(dt)
@@ -228,7 +367,12 @@ function love.update(dt)
         updateTitleScreen(dt)
     elseif screen == "earth_screen" then
         updateEarthScreen(dt)
+    elseif screen == "game_over" then
+        updateGameOverScreen(dt)
     end
+    deleteSprites(sprites)
+    deleteSprites(asteroids)
+    deleteSprites(explosions)
 end
 
 local function titleScreen()
@@ -248,6 +392,17 @@ local function drawAnimation(sprite)
     end
 end
 
+local function gameOverScreen()
+    love.graphics.setBackgroundColor(0,0,0,1)
+    love.graphics.setColor(1,1,1,1)
+    drawAnimation(earth_destroyed)
+    for i = 1, 20, 1 do
+        love.graphics.setColor(0, love.math.random(), 0, 1)
+        love.graphics.points(love.math.random(SCREEN_WIDTH), love.math.random(SCREEN_HEIGHT))
+    end
+    love.graphics.draw(images["game_over"], 0, tweening.tween)
+end
+
 local function earthScreen()
     love.graphics.setBackgroundColor(0,0,0,1)
     love.graphics.setColor(1,1,1,1)
@@ -255,6 +410,9 @@ local function earthScreen()
     drawAnimation(earth)
     for index, asteroid in ipairs(asteroids) do
         drawAnimation(asteroid)
+    end
+    for index, explosion in ipairs(explosions) do
+        drawAnimation(explosion)
     end
     if mode == "normal" then
         love.graphics.draw(images["cockpit"], 0, 0)
@@ -269,5 +427,7 @@ function love.draw()
         titleScreen()
     elseif screen == "earth_screen" then
         earthScreen()
+    elseif screen == "game_over" then
+        gameOverScreen()
     end
 end
